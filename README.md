@@ -6,8 +6,9 @@ Se continuará sobre este mismo proyecto en el Laboratorio 10 (CQRS y Saga).
 ## Estado actual
 
 Copia del código versionado de `devsecops-pipeline-lab`. La Parte A está preparada
-en `events/`, siguiendo la guía; todavía no está desplegada. No se copiaron credenciales, dependencias
-instaladas ni estados locales de Terraform.
+en `events/`, siguiendo la guía. El estudiante confirmó el despliegue de 12 recursos;
+sus outputs están guardados en `docs/lab9-outputs.md`. Los tres scripts están preparados
+con las URLs reales. Está pendiente verificar el flujo en AWS y reunir las capturas.
 
 El pipeline anterior se conserva en `docs/previous-labs/deploy.yml.disabled` como
 referencia. No se ejecuta automáticamente en este repositorio. El código previo
@@ -37,8 +38,29 @@ OpenTelemetry no aparecen en la lista de entregables del Laboratorio 9.
 4. Crear el publicador y los dos consumidores.
 5. Ejecutar el flujo y obtener las dos capturas solicitadas.
 
-Los archivos del paso 2 están preparados. Los pasos 3 a 5 están pendientes.
+Los pasos 1 a 4 están preparados. La ejecución del flujo y las evidencias están pendientes.
 Las evidencias deben corresponder a ejecuciones reales.
+
+## Ejecutar el flujo en PowerShell
+
+Desde la raíz de `event-driven-lab`, con las credenciales de AWS disponibles:
+
+```powershell
+npm install
+node publish-order-event.js
+Start-Sleep -Seconds 5
+node poll-notifications.js
+node poll-inventory.js
+```
+
+Ejecutar los comandos uno por uno y detenerse si aparece un error. Capturar la
+terminal cuando ambos consumidores hayan procesado la misma orden publicada.
+Si una cola no tiene mensajes, esperar y volver a ejecutar ese consumidor.
+Para repetir una prueba ya consumida, publicar una orden nueva y ejecutar ambos consumidores.
+
+Los scripts siguen la guía y simulan el correo y la reserva de inventario mediante
+mensajes en consola. El publicador además comprueba `FailedEntryCount` para detectar
+errores por evento devueltos por EventBridge.
 
 ## Cuándo tomar las capturas
 
