@@ -104,4 +104,28 @@ unos segundos.
 
 Captura obligatoria: publicación, escritura y consulta con el mismo `orderId`
 visible. Las capturas del código son respaldo adicional al repositorio.
-La prueba real de CQRS, la Saga (Parte C) y la limpieza final (Parte D) están pendientes.
+La evidencia de CQRS está pendiente de revisión. La limpieza final (Parte D) está pendiente.
+
+## Laboratorio 10 — Parte C: Saga
+
+`saga-orchestrator.js` sigue la secuencia de la guía: reservar inventario, cobrar
+y confirmar la orden. Si el pago falla después de reservar, libera la reserva.
+Los servicios están simulados mediante mensajes de consola; esta demo no cobra
+dinero ni modifica inventario real, y no utiliza las colas ni DynamoDB.
+
+`run-saga-demo.js` reutiliza `tracing.js` y ejecuta cinco intentos con resultados
+aleatorios. Los spans de OpenTelemetry se imprimen en consola al exportarse.
+Se usa `finally` para cerrar el span y el SDK incluso ante errores inesperados.
+
+```powershell
+node run-saga-demo.js
+```
+
+Captura obligatoria: una ejecución que muestre al menos `SAGA COMPLETA` y
+`SAGA COMPENSADA`. Para mostrar la compensación claramente, incluir también
+el rechazo del pago y `[Compensación] Liberando reserva ...`. Si falta alguno
+de los caminos, ejecutar la demo de nuevo. Un fallo por falta de stock no deja
+una reserva que liberar, aunque el ejemplo de la guía también lo etiqueta
+como `SAGA COMPENSADA`.
+
+Guardar las evidencias de CQRS y Saga antes de realizar la limpieza final.
