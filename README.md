@@ -8,7 +8,8 @@ Se continuará sobre este mismo proyecto en el Laboratorio 10 (CQRS y Saga).
 Copia del código versionado de `devsecops-pipeline-lab`. La Parte A está preparada
 en `events/`, siguiendo la guía. El estudiante confirmó el despliegue de 12 recursos;
 sus outputs están guardados en `docs/lab9-outputs.md`. Los tres scripts están preparados
-con las URLs reales. Está pendiente verificar el flujo en AWS y reunir las capturas.
+con las URLs reales. El estudiante confirmó el funcionamiento del flujo del Lab 9
+y la preparación de sus evidencias.
 
 El pipeline anterior se conserva en `docs/previous-labs/deploy.yml.disabled` como
 referencia. No se ejecuta automáticamente en este repositorio. El código previo
@@ -38,7 +39,7 @@ OpenTelemetry no aparecen en la lista de entregables del Laboratorio 9.
 4. Crear el publicador y los dos consumidores.
 5. Ejecutar el flujo y obtener las dos capturas solicitadas.
 
-Los pasos 1 a 4 están preparados. La ejecución del flujo y las evidencias están pendientes.
+El estudiante confirmó los pasos 1 a 5 del Lab 9.
 Las evidencias deben corresponder a ejecuciones reales.
 
 ## Ejecutar el flujo en PowerShell
@@ -75,3 +76,32 @@ errores por evento devueltos por EventBridge.
   con estado `Enabled`.
 
 No destruir el bus ni las colas al terminar el Lab 9; se reutilizan en el Lab 10.
+
+## Laboratorio 10 — Partes A y B
+
+`events/read-model.tf` agrega la tabla `devsecops-lab-orders-read-model`, el permiso
+de DynamoDB y la espera de propagación. El estudiante confirmó el despliegue y
+aportó una captura de la tabla activa con clave de partición `orderId` de tipo String.
+
+`update-read-model.js` consume la cola de inventario, guarda cada orden en DynamoDB
+con estado `received` y después elimina el mensaje de la cola.
+`query-orders.js` consulta la tabla siguiendo el ejemplo de la guía.
+
+Desde la raíz del repositorio, ejecutar uno por uno:
+
+```powershell
+node publish-order-event.js
+Start-Sleep -Seconds 5
+node update-read-model.js
+node query-orders.js
+```
+
+Para esta prueba no ejecutar `poll-inventory.js`: compite por la misma cola y
+podría consumir el mensaje antes que el modelo de lectura. Usar una orden nueva.
+Si no llegan mensajes, esperar y repetir `update-read-model.js`. Si la escritura
+terminó pero la consulta aún no muestra la orden, repetir `query-orders.js` tras
+unos segundos.
+
+Captura obligatoria: publicación, escritura y consulta con el mismo `orderId`
+visible. Las capturas del código son respaldo adicional al repositorio.
+La prueba real de CQRS, la Saga (Parte C) y la limpieza final (Parte D) están pendientes.
