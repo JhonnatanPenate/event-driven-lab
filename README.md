@@ -1,6 +1,6 @@
 # event-driven-lab
 
-Proyecto de los laboratorios 9 a 13 de Desarrollo en la Nube II: arquitecturas
+Proyecto de los laboratorios 9 a 14 de Desarrollo en la Nube II: arquitecturas
 basadas en eventos y contenedores avanzados.
 
 | Lab | Tema | Carpetas / archivos principales |
@@ -10,6 +10,7 @@ basadas en eventos y contenedores avanzados.
 | 11 | API Gateway + Lambda + SQS (integración empresarial) | `api-gateway/main.tf`, `lambda/` |
 | 12 | Fan-out con SNS hacia colas billing y shipping | `api-gateway/fanout.tf`, `sns-fanout-consumer.js` |
 | 13 | Kubernetes local con kind: Kafka, Deployments, Services, Job y Service Discovery | `k8s/`, `k8s-app/` |
+| 14 | Imagen multi-stage, probes, réplicas, Ingress (ingress-nginx) y escalado | `status-api/`, `k8s/status-api-*.yaml` |
 
 ## Estado actual
 
@@ -211,5 +212,45 @@ Resultado obtenido: `kafka` y `billing-consumer` en `Running`, `order-producer` 
 y el consumidor muestra `[billing-service] Orden recibida desde la partición 0: KAFKA-...`.
 La conexión se hizo solo por el nombre del Service (Service Discovery), sin IPs ni `localhost`.
 
-No destruir el clúster: se reutiliza en el Laboratorio 14. Limpieza al terminar ese
-laboratorio: `kind delete cluster --name devsecops-lab`.
+El clúster se reutilizó en el Laboratorio 14.
+
+## Laboratorio 14 — Imagen optimizada, probes e Ingress
+
+Continúa sobre el clúster `devsecops-lab` del Laboratorio 13.
+
+- `status-api/`: API Express con `GET /health` y `GET /`; la raíz devuelve el `hostname`
+  del Pod y un contador de solicitudes propio de cada réplica.
+- `status-api/Dockerfile`: construcción multi-stage. La etapa `deps` instala dependencias y
+  la imagen final solo copia `node_modules`, `package.json` y `server.js`; corre como `appuser`.
+- `k8s/status-api-deployment.yaml`: Deployment con 2 réplicas, `requests`/`limits` de CPU y
+  memoria, `readinessProbe` y `livenessProbe` sobre `/health`, y Service `status-api` (80 → 3000).
+- `k8s/status-api-ingress.yaml`: Ingress de clase `nginx` que envía `/` al Service `status-api`.
+
+En PowerShell se usa `curl.exe`, porque `curl` es un alias de `Invoke-WebRequest`.
+
+```powershell
+cd status-api
+docker build -t devsecops-lab/status-api:1.0 .
+cd ..
+kind load docker-image devsecops-lab/status-api:1.0 --name devsecops-lab
+kubectl apply -f k8s/status-api-deployment.yaml
+kubectl get pods -l app=status-api
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s
+kubectl apply -f k8s/status-api-ingress.yaml
+curl.exe http://localhost/health
+curl.exe http://localhost/
+kubectl scale deployment status-api --replicas=4
+kubectl get pods
+```
+
+Resultado obtenido: las réplicas pasan de `0/1` a `1/1` cuando la readinessProbe responde;
+las respuestas de `http://localhost/` alternan entre hostnames distintos (balanceo del Service)
+y, tras escalar a 4 réplicas, aparecen nuevos hostnames sin modificar ningún YAML.
+
+Limpieza final de los Labs 13 y 14:
+
+```powershell
+kind delete cluster --name devsecops-lab
+docker rmi devsecops-lab/k8s-app:1.0 devsecops-lab/status-api:1.0
+```
