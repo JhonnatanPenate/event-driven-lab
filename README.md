@@ -1,7 +1,15 @@
 # event-driven-lab
 
-Base para el Laboratorio 9: Implementación de Arquitecturas Basadas en Eventos.
-Se continuará sobre este mismo proyecto en el Laboratorio 10 (CQRS y Saga).
+Proyecto de los laboratorios 9 a 13 de Desarrollo en la Nube II: arquitecturas
+basadas en eventos y contenedores avanzados.
+
+| Lab | Tema | Carpetas / archivos principales |
+|-----|------|---------------------------------|
+| 9 | EventBridge + colas SQS con consumidores independientes | `events/`, `publish-order-event.js`, `poll-*.js` |
+| 10 | CQRS (modelo de lectura DynamoDB) y Saga con compensación | `events/read-model.tf`, `update-read-model.js`, `query-orders.js`, `saga-orchestrator.js` |
+| 11 | API Gateway + Lambda + SQS (integración empresarial) | `api-gateway/main.tf`, `lambda/` |
+| 12 | Fan-out con SNS hacia colas billing y shipping | `api-gateway/fanout.tf`, `sns-fanout-consumer.js` |
+| 13 | Kubernetes local con kind: Kafka, Deployments, Services, Job y Service Discovery | `k8s/`, `k8s-app/` |
 
 ## Estado actual
 
@@ -129,3 +137,79 @@ una reserva que liberar, aunque el ejemplo de la guía también lo etiqueta
 como `SAGA COMPENSADA`.
 
 Guardar las evidencias de CQRS y Saga antes de realizar la limpieza final.
+
+## Laboratorio 11 — API Gateway + Lambda + SQS
+
+`api-gateway/main.tf` crea en `us-east-1`:
+
+- La cola `devsecops-lab-orders-api-queue`.
+- El rol `devsecops-lab-lambda-exec-role`, con logs básicos y permiso `sqs:SendMessage` solo sobre esa cola.
+- Las funciones Lambda `devsecops-lab-create-order` y `devsecops-lab-health` (Node.js 20).
+- Una HTTP API (`devsecops-lab-orders-api`) con las rutas `POST /orders` y `GET /health`.
+
+`lambda/create-order.js` valida que el cuerpo traiga `productId` y `amount`, envía la orden
+a SQS y responde `201`. Si el JSON es inválido o faltan campos, responde `400`.
+
+```powershell
+npm install
+cd api-gateway
+terraform init
+terraform apply
+$api = terraform output -raw api_url
+Invoke-RestMethod "$($api)health"
+Invoke-RestMethod -Method Post -Uri "$($api)orders" -ContentType "application/json" -Body '{"productId":"P-001","amount":25}'
+cd ..
+```
+
+## Laboratorio 12 — Fan-out con SNS
+
+`api-gateway/fanout.tf` agrega el tópico `devsecops-lab-order-events-topic` y las colas
+`devsecops-lab-billing-queue` y `devsecops-lab-shipping-queue`, ambas suscritas al tópico.
+Las políticas de cada cola solo aceptan mensajes enviados por SNS desde ese tópico.
+
+`sns-fanout-consumer.js` lee los pedidos que dejó la API en `devsecops-lab-orders-api-queue`,
+los republica en SNS y los elimina de la cola. SNS entrega una copia a cada cola suscrita.
+
+```powershell
+node sns-fanout-consumer.js
+```
+
+Verificación: en la consola de SQS, las colas billing y shipping reciben el mismo pedido.
+Al terminar, si los recursos ya no se usan: `terraform destroy` dentro de `api-gateway/`.
+
+## Laboratorio 13 — Kubernetes local con kind
+
+Corre 100% en local (costo $0), con kind v0.33.0 (Kubernetes 1.37) sobre Docker Desktop.
+Continúa en el Laboratorio 14.
+
+- `k8s/kind-cluster-config.yaml`: clúster `devsecops-lab` de un nodo, con la etiqueta
+  `ingress-ready=true` y los puertos 80/443 mapeados para el Ingress del Lab 14.
+- `k8s/kafka-deployment.yaml`: Deployment de Kafka (`bitnamilegacy/kafka:3.7`, modo KRaft)
+  y su Service `kafka`. Kafka se anuncia como `kafka:9092`, no como `localhost`.
+- `k8s-app/`: productor y consumidor de Kafka (`kafkajs`) que se conectan a `kafka:9092`.
+  El `Dockerfile` usa `node:20-alpine`, copia `package.json` antes del código para
+  aprovechar el cache de capas y ejecuta la app con un usuario sin privilegios.
+- `k8s/consumer-deployment.yaml`: Deployment `billing-consumer`, que escucha `order-events` sin detenerse.
+- `k8s/producer-job.yaml`: Job `order-producer`, que publica una orden y termina.
+
+```powershell
+kind create cluster --config k8s/kind-cluster-config.yaml --name devsecops-lab
+kubectl get nodes
+kubectl apply -f k8s/kafka-deployment.yaml
+kubectl get pods --watch
+cd k8s-app
+docker build -t devsecops-lab/k8s-app:1.0 .
+cd ..
+kind load docker-image devsecops-lab/k8s-app:1.0 --name devsecops-lab
+kubectl apply -f k8s/consumer-deployment.yaml
+kubectl apply -f k8s/producer-job.yaml
+kubectl logs -l app=billing-consumer --tail=20
+kubectl get pods
+```
+
+Resultado obtenido: `kafka` y `billing-consumer` en `Running`, `order-producer` en `Completed`,
+y el consumidor muestra `[billing-service] Orden recibida desde la partición 0: KAFKA-...`.
+La conexión se hizo solo por el nombre del Service (Service Discovery), sin IPs ni `localhost`.
+
+No destruir el clúster: se reutiliza en el Laboratorio 14. Limpieza al terminar ese
+laboratorio: `kind delete cluster --name devsecops-lab`.
