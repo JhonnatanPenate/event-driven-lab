@@ -1,6 +1,6 @@
 # event-driven-lab
 
-Proyecto de los laboratorios 9 a 15 de Desarrollo en la Nube II: arquitecturas
+Proyecto de los laboratorios 9 a 16 de Desarrollo en la Nube II: arquitecturas
 basadas en eventos y contenedores avanzados.
 
 | Lab | Tema | Carpetas / archivos principales |
@@ -12,6 +12,7 @@ basadas en eventos y contenedores avanzados.
 | 13 | Kubernetes local con kind: Kafka, Deployments, Services, Job y Service Discovery | `k8s/`, `k8s-app/` |
 | 14 | Imagen multi-stage, probes, réplicas, Ingress (ingress-nginx) y escalado | `status-api/`, `k8s/status-api-*.yaml` |
 | 15 | Auto-escalado (HPA), self-healing, rolling update y PodDisruptionBudget | `k8s/status-api-hpa.yaml`, `k8s/status-api-pdb.yaml` |
+| 16 | Chart de Helm parametrizado: releases dev y prod, upgrade y rollback | `status-api-chart/` |
 
 ## Estado actual
 
@@ -295,4 +296,48 @@ Resultados obtenidos:
 - Durante el rolling update las respuestas pasaron de `Status API` a `Status API v2` sin errores de conexión.
 - `status-api-pdb` quedó con `MIN AVAILABLE 1` y `ALLOWED DISRUPTIONS 1`.
 
-No destruir el clúster: el HPA, el PDB y `status-api` se reutilizan en el Laboratorio 16.
+El HPA, el PDB y `status-api` se empaquetaron después en el chart de Helm del Laboratorio 16.
+
+## Laboratorio 16 — Chart de Helm (dev y prod)
+
+Los manifiestos de `status-api` de los Labs 14–15 (Deployment, Service, HPA, PDB e Ingress) se
+empaquetaron en `status-api-chart/`, con Helm v4.
+
+- `Chart.yaml`: chart `status-api` versión `1.0.0`, `appVersion` `2.0`.
+- `values.yaml`: valores por defecto (ambiente dev): 2 réplicas, imagen `devsecops-lab/status-api:2.0`,
+  HPA de 2 a 6, PDB con `minAvailable: 1` e Ingress `nginx` habilitado.
+- `values-prod.yaml`: solo las diferencias de prod: 3 réplicas, más CPU y memoria, HPA de 3 a 10
+  e Ingress deshabilitado.
+- `templates/`: `deployment.yaml`, `service.yaml`, `hpa.yaml`, `pdb.yaml` e `ingress.yaml`. Los nombres
+  usan `{{ .Release.Name }}`, así que cada release crea recursos propios (`dev-status-api`,
+  `prod-status-api`). HPA, PDB e Ingress se pueden desactivar desde los values.
+
+```powershell
+kubectl delete -f k8s/status-api-deployment.yaml
+kubectl delete -f k8s/status-api-hpa.yaml
+kubectl delete -f k8s/status-api-pdb.yaml
+kubectl delete -f k8s/status-api-ingress.yaml
+helm template dev status-api-chart/
+helm lint status-api-chart/
+helm install dev status-api-chart/
+helm install prod status-api-chart/ -f status-api-chart/values-prod.yaml
+helm list
+kubectl get pods
+helm upgrade dev status-api-chart/ --set replicaCount=3
+helm history dev
+helm rollback dev 1
+helm history dev
+```
+
+Resultados obtenidos: `helm list` muestra `dev` y `prod` en `deployed` con el chart `status-api-1.0.0`;
+dev corre 2 réplicas y prod 3 con el mismo chart; el upgrade llevó dev a 3 réplicas y el rollback
+lo devolvió a 2.
+
+## Limpieza final (Labs 13–16)
+
+```powershell
+helm uninstall dev
+helm uninstall prod
+kind delete cluster --name devsecops-lab
+docker rmi devsecops-lab/k8s-app:1.0 devsecops-lab/status-api:1.0 devsecops-lab/status-api:2.0
+```
