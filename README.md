@@ -1,6 +1,6 @@
 # event-driven-lab
 
-Proyecto de los laboratorios 9 a 14 de Desarrollo en la Nube II: arquitecturas
+Proyecto de los laboratorios 9 a 15 de Desarrollo en la Nube II: arquitecturas
 basadas en eventos y contenedores avanzados.
 
 | Lab | Tema | Carpetas / archivos principales |
@@ -11,6 +11,7 @@ basadas en eventos y contenedores avanzados.
 | 12 | Fan-out con SNS hacia colas billing y shipping | `api-gateway/fanout.tf`, `sns-fanout-consumer.js` |
 | 13 | Kubernetes local con kind: Kafka, Deployments, Services, Job y Service Discovery | `k8s/`, `k8s-app/` |
 | 14 | Imagen multi-stage, probes, réplicas, Ingress (ingress-nginx) y escalado | `status-api/`, `k8s/status-api-*.yaml` |
+| 15 | Auto-escalado (HPA), self-healing, rolling update y PodDisruptionBudget | `k8s/status-api-hpa.yaml`, `k8s/status-api-pdb.yaml` |
 
 ## Estado actual
 
@@ -254,3 +255,44 @@ Limpieza final de los Labs 13 y 14:
 kind delete cluster --name devsecops-lab
 docker rmi devsecops-lab/k8s-app:1.0 devsecops-lab/status-api:1.0
 ```
+
+## Laboratorio 15 — Auto-escalado y resiliencia
+
+Continúa sobre `status-api` en el clúster `devsecops-lab` (se recreó con la Parte B del Lab 13 y
+las Partes A–D del Lab 14). Continúa en el Laboratorio 16 (chart de Helm).
+
+- `k8s/metrics-server-kind-patch.json`: agrega `--kubelet-insecure-tls` a metrics-server, necesario
+  en kind por los certificados autofirmados. Se aplica con `--patch-file` para evitar problemas de
+  comillas en PowerShell.
+- `k8s/status-api-hpa.yaml`: HPA de 2 a 6 réplicas con objetivo de 50 % de CPU promedio.
+- `k8s/status-api-pdb.yaml`: PodDisruptionBudget con `minAvailable: 1`.
+- `status-api/server.js`: el mensaje cambia a `DevSecOps Lab - Status API v2` para la imagen `2.0`.
+
+```powershell
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl patch deployment metrics-server -n kube-system --type=json --patch-file k8s/metrics-server-kind-patch.json
+kubectl top pods
+kubectl apply -f k8s/status-api-hpa.yaml
+kubectl run load-generator --image=busybox:1.36 --restart=Never -- /bin/sh -c "while true; do wget -q -O- http://status-api/ > /dev/null; done"
+kubectl get hpa status-api-hpa --watch
+kubectl delete pod load-generator
+kubectl delete pod NOMBRE_DEL_POD
+cd status-api
+docker build -t devsecops-lab/status-api:2.0 .
+cd ..
+kind load docker-image devsecops-lab/status-api:2.0 --name devsecops-lab
+1..90 | ForEach-Object { curl.exe -sS http://localhost/; ""; Start-Sleep -Seconds 1 }   # en otra terminal
+kubectl set image deployment/status-api status-api=devsecops-lab/status-api:2.0
+kubectl rollout status deployment/status-api
+kubectl apply -f k8s/status-api-pdb.yaml
+kubectl get pdb
+```
+
+Resultados obtenidos:
+
+- Con carga, la CPU llegó a 171–279 % del objetivo y el HPA subió las réplicas de 2 a 4 y luego a 6.
+- Al borrar un Pod, el Deployment creó uno nuevo automáticamente.
+- Durante el rolling update las respuestas pasaron de `Status API` a `Status API v2` sin errores de conexión.
+- `status-api-pdb` quedó con `MIN AVAILABLE 1` y `ALLOWED DISRUPTIONS 1`.
+
+No destruir el clúster: el HPA, el PDB y `status-api` se reutilizan en el Laboratorio 16.
